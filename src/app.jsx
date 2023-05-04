@@ -2,7 +2,7 @@ const React = require('react');
 
 const { Button, Checkbox, Input, Radio, Modal, InputNumber, Alert } = require('antd');
 const CheckboxGroup = Checkbox.Group;
-const { remote } = require("electron");
+const { remote, app } = require("electron");
 
 const path = require('path');
 const fs = require("fs");
@@ -28,15 +28,10 @@ class App extends React.Component {
       platform: 'android',//平台 android iOS
       env: 'false',//环境 release debug
       entry: "",//打包入口
-      baseIndexJsDir: "/platformDep-ui.js",//base包路径
-      buzIndexJsDir: "/XABageIndex.js",//业务包入口路径
       buzConfigList: [],//业务包配置列表
       rootDir: "",//项目目录
       outputDir: "",//打包输出目录
       type: 'buz',//基础包:base 业务包:buz
-      bundleDir: "/RNClass/output/XABadgeHome",//打包后bundle目录
-      bundleName: "XABadgeHomeScreen",//bundle名
-      assetsDir: "/RNClass/output/XABadgeHome",
       deps: [],//
       depsChecked: [],
       cmdStr: '',
@@ -56,6 +51,7 @@ class App extends React.Component {
     this.renderTypeSelect = this.renderTypeSelect.bind(this);
     this.startPackage = this.startPackage.bind(this);
     this.initDir = this.initDir.bind(this);
+    this.cmdOpenDir = this.cmdOpenDir.bind(this);
   }
   renderBuzSelectItems() {
     return (<Radio.Group defaultValue={this.state.buzSelectItem} buttonStyle="solid"
@@ -241,16 +237,20 @@ class App extends React.Component {
   //检查基础配置
   checkAppConfig() {
     console.log("checkAppConfig:" + this.state.rootDir)
+    if (!fs.existsSync(configRootDir)) {
+      fs.mkdirSync(configRootDir)
+    }
     fs.readFile(appLockDir, 'utf8', (err, fileContent) => {
       console.log("readFile:" + err)
+      var content = { "rootDir": "", "outputDir": "" }
       if (err) {
-        if (err.code === 'ENOENT') {
-          return
-        }
-        throw new Error(err)
+        //读取错误，构建默认数据
+        fs.writeFileSync(appLockDir, JSON.stringify(content));
+      } else {
+        content = JSON.parse(fileContent);
       }
       //读取到json
-      const content = JSON.parse(fileContent);
+
       let rootDir = content['rootDir'];
       let outputDir = content['outputDir'];
 
@@ -268,14 +268,14 @@ class App extends React.Component {
   //检查业务包配置
   checkBuzConfig() {
     fs.readFile(buzLockDir, 'utf8', (err, fileContent) => {
+      var content = []
       if (err) {
-        if (err.code === 'ENOENT') {
-          return
-        }
-        throw new Error(err)
+        //读取错误，构建默认数据
+        fs.writeFileSync(buzLockDir, JSON.stringify(content));
+      } else {
+        content = JSON.parse(fileContent);
       }
       //读取到json
-      const content = JSON.parse(fileContent);
       this.setState({ buzConfigList: content })
       this.initDir(this.state.rootDir);
     });
@@ -334,7 +334,7 @@ class App extends React.Component {
 
   renderItem(name, item) {
     return (<div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', marginTop: '12px' }}>
-      <div style={{ marginRight: '10px' }}>{name + ' :  '}</div>
+      <div style={{ marginRight: '10px' }}>{name}</div>
       <div style={{ display: 'flex', flexDirection: 'row' }}>{item}</div>
     </div>)
   }
@@ -384,14 +384,6 @@ class App extends React.Component {
       if (this.state.entry) {
         buttonName = this.state.entry;
       }
-    } else if (id == 'bundle') {
-      if (this.state.bundleDir) {
-        buttonName = this.state.bundleDir;
-      }
-    } else if (id == 'assets') {
-      if (this.state.assetsDir) {
-        buttonName = this.state.assetsDir;
-      }
     }
     return (<Button onClick={_ => this.selectFile(id)} block>{buttonName}</Button>);
   }
@@ -399,11 +391,7 @@ class App extends React.Component {
   fileSelected(id, path) {
     if (id == 'entry') {//file
       this.setState({ entry: path });
-    } else if (id == 'bundle') {
-      this.setState({ bundleDir: path });
-    } else if (id == 'assets') {
-      this.setState({ assetsDir: path });
-    }
+    } 
   }
 
   selectFile(id) {
@@ -523,6 +511,19 @@ class App extends React.Component {
     }
 
 
+  }
+  cmdOpenDir(dir) {
+    const { exec } = require('child_process');
+
+    const openOutputDirstr = "start " + dir
+
+    exec(openOutputDirstr, { cwd: this.projDir }, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`执行出错: ${error}`);
+        this.setState({ cmdStr: error });
+        return;
+      }
+    })
   }
 
   startPackage() {
@@ -644,19 +645,27 @@ class App extends React.Component {
     });
   }
 
+
   render() {
-    const { platform, env, entry, type, bundleDir, assetsDir, depsChecked } = this.state;
+    const { platform, env, entry, type, depsChecked } = this.state;
     return (<div style={{ paddingLeft: 30, paddingTop: 18, display: 'flex', flexDirection: 'column' }}>
-      {this.renderItem('平台', this.renderPlatformSelect())}
-      {this.renderItem('环境', this.renderEnvSelect())}
-      {this.renderItem('类型', this.renderTypeSelect())}
+      {this.renderItem('项目目录：' + this.state.rootDir)}
+      {this.renderItem('输出目录：' + this.state.outputDir)}
+      {this.renderItem('', [<Button onClick={_ => this.cmdOpenDir(this.state.rootDir)} block>打开项目目录</Button>,
+      <Button onClick={_ => this.cmdOpenDir(this.state.outputDir)} block>打开输出目录</Button>,
+      <Button onClick={_ => this.cmdOpenDir(path.resolve(configRootDir))} block>打开配置文件目录</Button>])}
+      {this.renderItem('平台 :  ', this.renderPlatformSelect())}
+      {this.renderItem('环境 :  ', this.renderEnvSelect())}
+      {this.renderItem('类型 :  ', this.renderTypeSelect())}
       {this.renderBuzList()}
-      {this.renderItem('入口', this.renderFileSelect('entry'))}
+      {this.renderItem('入口 :  ', this.renderFileSelect('entry'))}
       {/* {this.renderItem('bundle目录', this.renderFileSelect('bundle'))}
       {this.renderItem('bundle名称', this.renderBundleName())}
       {this.renderItem('assets目录', this.renderFileSelect('assets'))} */}
-      {this.renderItem('模块依赖', this.renderDep())}
-      <Button style={{ marginTop: 12, marginLeft: 10, width: 100 }} loading={this.state.loading} onClick={this.startPackage}>打包</Button>
+      {this.renderItem('模块依赖 :  ', this.renderDep())}
+      {this.renderItem('', [<Button style={{ marginTop: 12, marginLeft: 10, width: 100 }} loading={this.state.loading} onClick={this.startPackage}>打包</Button>
+      ])}
+
       <TextArea value={this.state.cmdStr} rows={4} readonly={true} style={{ marginTop: 12, width: 800, height: 200 }} />
       {
         this.renderAddModal()
